@@ -77,43 +77,44 @@ function YTDurationToSeconds(duration) {
 async function enqueue(ytid, addedBy) {
   if (!/^[A-Za-z0-9_-]{11}$/.test(ytid)) {
     console.log("enque failed - invalid ytid");
+    io.emit("message", `@${addedBy} can't add ${ytid}, invalid id`);
     return;
   }
   if (queue.length - 1 == config.queueLimit) {
-    console.log("enque failed - queue is full");
+    io.emit("message", `@${addedBy} can't add ${ytid}, queue is full`);
     return;
   }
   if ((queue.length > 0 && queue[0].ytid == ytid) || lastYtid == ytid) {
-    console.log("enque failed - media was just played");
+    io.emit("message", `@${addedBy} can't add ${ytid}, media was just played`);
     return;
   }
   if (queue.length > 0 && queue[queue.length - 1].ytid == ytid) {
-    console.log("enque failed - media was just added to queue");
+    io.emit("message", `@${addedBy} can't add ${ytid}, media was just added`);
     return;
   }
   let res = await fetch(
     `https://www.googleapis.com/youtube/v3/videos?part=snippet%2C+contentDetails%2C+status&id=${ytid}&key=${config.ytkey}`
   );
   if (!res.ok) {
-    console.log("enque failed - non ok response");
+    io.emit("message", `@${addedBy} can't add ${ytid}, non ok response from youtube`);
     return;
   }
   let data = await res.json();
   if (data.items.length != 1) {
-    console.log("enque failed - no matching id");
+    io.emit("message", `@${addedBy} can't add ${ytid}, id not found`);
     return;
   }
   if (data.items[0].kind != "youtube#video") {
-    console.log("enque failed - not of kind youtube#video");
+    io.emit("message", `@${addedBy} can't add ${ytid}, not a youtube#video`);
     return;
   }
   if (!data.items[0].status.embeddable) {
-    console.log("enque failed - not embeddable");
+    io.emit("message", `@${addedBy} can't add ${ytid}, not embeddable`);
     return;
   }
   let duration = YTDurationToSeconds(data.items[0].contentDetails.duration);
   if (duration > config.durationLimit) {
-    console.log("enque failed - video too long");
+    io.emit("message", `@${addedBy} can't add ${ytid}, video too long`);
     return;
   }
   let item = {
