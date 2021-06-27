@@ -19,7 +19,8 @@ const io = require("socket.io")(server, {
 });
 
 let connections = 0;
-let boos = [];
+let likes = [];
+let dislikes = [];
 let lastYtid = "";
 let queue = [];
 let lastPlay = -1;
@@ -37,7 +38,8 @@ function end() {
   console.log("media done");
   inVideo = false;
   queue.shift();
-  boos = [];
+  likes = [];
+  dislikes = [];
   parseQueue();
 }
 
@@ -96,7 +98,10 @@ async function enqueue(ytid, addedBy) {
     `https://www.googleapis.com/youtube/v3/videos?part=snippet%2C+contentDetails%2C+status&id=${ytid}&key=${config.ytkey}`
   );
   if (!res.ok) {
-    io.emit("message", `@${addedBy} can't add ${ytid}, non ok response from youtube`);
+    io.emit(
+      "message",
+      `@${addedBy} can't add ${ytid}, non ok response from youtube`
+    );
     return;
   }
   let data = await res.json();
@@ -133,7 +138,8 @@ async function enqueue(ytid, addedBy) {
 io.on("connection", function (socket) {
   connections++;
   io.emit("connections", connections);
-  socket.emit("boos", boos.length);
+  socket.emit("likes", likes.length);
+  socket.emit("dislikes", dislikes.length);
   socket.emit("durationLimit", config.durationLimit);
   if (inVideo) {
     socket.emit("enqueueMany", queue);
@@ -143,7 +149,7 @@ io.on("connection", function (socket) {
       start: Math.ceil((Date.now() - lastPlay) / 1000),
       duration: queue[0].duration,
       title: queue[0].title,
-      addedBy: queue[0].addedBy
+      addedBy: queue[0].addedBy,
     };
     socket.emit("play", item);
   } else if (queue.length > 0) {
@@ -182,46 +188,49 @@ client.on("message", (channel, tags, message, self) => {
     enqueue(words[1], tags["display-name"]);
   } else if (
     words.length >= 1 &&
-    words[0] == "!boo" &&
+    words[0] == "!dislike" &&
     inVideo &&
-    !boos.includes(tags["display-name"])
+    !likes.includes(tags["display-name"]) &&
+    !dislikes.includes(tags["display-name"])
   ) {
-    boos.push(tags["display-name"]);
-    io.emit("boos", boos.length);
-    if (boos.length >= Math.ceil(connections / 3)) {
-      console.log("boo quota reached - skipping");
+    dislikes.push(tags["display-name"]);
+    io.emit("dislikes", dislikes.length);
+    if (dislikes.length >= likes.length + 2) {
+      console.log("dislike ratio reached - skipping");
       lastPlay = Date.now();
       end();
     }
-  } 
+  } else if (
+    words.length >= 1 &&
+    words[0] == "!like" &&
+    inVideo &&
+    !likes.includes(tags["display-name"]) &&
+    !dislikes.includes(tags["display-name"])
+  ) {
+    likes.push(tags["display-name"]);
+    io.emit("likes", likes.length);
+  }
   // Mod commands
   let badges = tags.badges || {};
   let isBroadcaster = badges.broadcaster;
   let isMod = badges.moderator;
   let isModUp = isBroadcaster || isMod || tags["display-name"] == config.admin;
-  if(!isModUp) {
-    return
+  if (!isModUp) {
+    return;
   }
-  if (
-    words.length >= 1 &&
-    words[0] == "!skip" &&
-    inVideo
-  ) {
+  if (words.length >= 1 && words[0] == "!skip" && inVideo) {
     console.log("mod skip - skipping");
     lastPlay = Date.now();
     end();
   } else if (words.length == 2 && words[0] == "!durationLimit") {
-    let parsed = parseInt(words[1])
-    if(!isNaN(parsed) && parsed >= 10 && parsed <= 3600){
+    let parsed = parseInt(words[1]);
+    if (!isNaN(parsed) && parsed >= 10 && parsed <= 3600) {
       config.durationLimit = words[1];
       io.emit("durationLimit", config.durationLimit);
     } else {
-      console.log("mod command denied - invalid seconds")
+      console.log("mod command denied - invalid seconds");
     }
-  } else if (
-    words.length >= 1 &&
-    words[0] == "!patrick"
-  ) {
-    enqueue("kJXwPxlK8xo", tags["display-name"])
+  } else if (words.length >= 1 && words[0] == "!patrick") {
+    enqueue("kJXwPxlK8xo", tags["display-name"]);
   }
 });
